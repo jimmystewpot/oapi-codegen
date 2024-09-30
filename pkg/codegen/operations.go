@@ -1010,6 +1010,11 @@ func GenerateStdHTTPServer(t *template.Template, operations []OperationDefinitio
 	return GenerateTemplates([]string{"stdhttp/std-http-interface.tmpl", "stdhttp/std-http-middleware.tmpl", "stdhttp/std-http-handler.tmpl"}, t, operations)
 }
 
+// GenerateAPIGwHTTPLambda generates all the go code for the AWS Lambda function to handle a HTTP event.
+func GenerateAPIGwHTTPLambda(t *template.Template, operations []OperationDefinition) (string, error) {
+	return GenerateTemplates([]string{"aws-apigw-http-lambda/event-handler.tmpl"}, t, operations)
+}
+
 func GenerateStrictServer(t *template.Template, operations []OperationDefinition, opts Configuration) (string, error) {
 
 	var templates []string

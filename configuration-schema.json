@@ -56,6 +56,10 @@
         "embedded-spec": {
           "type": "boolean",
           "description": "EmbeddedSpec indicates whether to embed the swagger spec in the generated code"
+        },
+        "aws-apigw-http-lambda": {
+          "type": "boolean",
+          "description": "aws-http-lambda specifies wheather to generate an AWS lambda function to  handle an api-gateway http event boilerplate"
         }
       }
     },

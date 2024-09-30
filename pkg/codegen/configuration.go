@@ -56,6 +56,9 @@ func (o Configuration) Validate() error {
 	if o.Generate.StdHTTPServer {
 		nServers++
 	}
+	if o.Generate.AWSAPIGwHTTPLambda {
+		nServers++
+	}
 	if o.Generate.GinServer {
 		nServers++
 	}
@@ -118,6 +121,8 @@ type GenerateOptions struct {
 	GorillaServer bool `yaml:"gorilla-server,omitempty"`
 	// StdHTTPServer specifies whether to generate stdlib http server boilerplate
 	StdHTTPServer bool `yaml:"std-http-server,omitempty"`
+	// AWSAPIGwHTTPLambda specifies whether to generate aws api-gw http lambda event handler boilerplate
+	AWSAPIGwHTTPLambda bool `yaml:"aws-apigw-http-lambda,omitempty"`
 	// Strict specifies whether to generate strict server wrapper
 	Strict bool `yaml:"strict-server,omitempty"`
 	// Client specifies whether to generate client boilerplate

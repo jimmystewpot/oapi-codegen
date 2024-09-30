@@ -249,6 +249,14 @@ func Generate(spec *openapi3.T, opts Configuration) (string, error) {
 		}
 	}
 
+	var awsAPIGwHTTPLambda string
+	if opts.Generate.AWSAPIGwHTTPLambda {
+		awsAPIGwHTTPLambda, err = GenerateAPIGwHTTPLambda(t, ops)
+		if err != nil {
+			return "", fmt.Errorf("error generating Go handlers for Paths: %w", err)
+		}
+	}
+
 	var strictServerOut string
 	if opts.Generate.Strict {
 		var responses []ResponseDefinition
@@ -378,6 +386,13 @@ func Generate(spec *openapi3.T, opts Configuration) (string, error) {
 
 	if opts.Generate.StdHTTPServer {
 		_, err = w.WriteString(stdHTTPServerOut)
+		if err != nil {
+			return "", fmt.Errorf("error writing server path handlers: %w", err)
+		}
+	}
+
+	if opts.Generate.AWSAPIGwHTTPLambda {
+		_, err = w.WriteString(awsAPIGwHTTPLambda)
 		if err != nil {
 			return "", fmt.Errorf("error writing server path handlers: %w", err)
 		}
