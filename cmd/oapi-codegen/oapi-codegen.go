@@ -325,7 +325,9 @@ func main() {
 		if err != nil {
 			errExit("%w", err)
 		}
+		return
 	}
+
 	code, err := codegen.Generate(swagger, opts.Configuration)
 	if err != nil {
 		errExit("error generating code: %s\n", err)
