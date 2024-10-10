@@ -14,8 +14,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -26,6 +28,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/oapi-codegen/v2/pkg/codegen"
 	"github.com/oapi-codegen/oapi-codegen/v2/pkg/util"
 )
@@ -40,6 +43,7 @@ func errExit(format string, args ...interface{}) {
 
 var (
 	flagOutputFile     string
+	flagOutputDir      bool
 	flagConfigFile     string
 	flagOldConfigStyle bool
 	flagOutputConfig   bool
@@ -67,6 +71,8 @@ type configuration struct {
 
 	// OutputFile is the filename to output.
 	OutputFile string `yaml:"output,omitempty"`
+	// OutputDir is used for single-file-per-operation written to independend directories
+	OutputDir bool `yaml:"output-dir,omitempty"`
 }
 
 // oldConfiguration is deprecated. Please add no more flags here. It is here
@@ -98,6 +104,7 @@ func main() {
 		}
 	}()
 	flag.StringVar(&flagOutputFile, "o", "", "Where to output generated code, stdout is default.")
+	flag.BoolVar(&flagOutputDir, "od", false, "Write the outputs to a per-operationID directory.")
 	flag.BoolVar(&flagOldConfigStyle, "old-config-style", false, "Whether to use the older style config file format.")
 	flag.BoolVar(&flagOutputConfig, "output-config", false, "When true, outputs a configuration file for oapi-codegen using current settings.")
 	flag.StringVar(&flagConfigFile, "config", "", "A YAML config file that controls oapi-codegen behavior.")
@@ -304,50 +311,20 @@ func main() {
 	}
 
 	if strings.HasPrefix(swagger.OpenAPI, "3.1.") {
-		fmt.Println("WARNING: You are using an OpenAPI 3.1.x specification, which is not yet supported by oapi-codegen (https://github.com/oapi-codegen/oapi-codegen/issues/373) and so some functionality may not be available. Until oapi-codegen supports OpenAPI 3.1, it is recommended to downgrade your spec to 3.0.x")
+		fmt.Printf("WARNING: You are using an OpenAPI 3.1.x specification, which is not yet supported by oapi-codegen (https://github.com/oapi-codegen/oapi-codegen/issues/373) and so some functionality may not be available. Until oapi-codegen supports OpenAPI 3.1, it is recommended to downgrade your spec to 3.0.x\n")
 	}
 
 	if len(noVCSVersionOverride) > 0 {
 		opts.Configuration.NoVCSVersionOverride = &noVCSVersionOverride
 	}
 
+	// handle a single file per operationID. Useful for functions where there's usually a 1:1 mapping between the operationID,
+	// the API path and the function executable.
 	if opts.Configuration.OutputOptions.FilePerOperationID {
-		if opts.OutputFile == "" {
-			errExit("file-per-operationID requires an output file to be set")
-		}
-		filename := opts.OutputFile
-		ops, err := codegen.GetOperationNames(swagger)
+		err = handleSeparateFiles(swagger, overlayOpts, opts)
 		if err != nil {
-			errExit("error getting operation definitions: %w\n", err)
+			errExit("%w", err)
 		}
-		for opID, _ := range ops {
-			swagger, err = util.LoadSwaggerWithOverlay(flag.Arg(0), overlayOpts)
-			if err != nil {
-				errExit("error loading swagger spec in %s\n: %s\n", flag.Arg(0), err)
-			}
-
-			if !codegen.StringInArray(opID, opts.Configuration.OutputOptions.ExcludeOperationIDs) {
-				// set the IncludeOperationIds for each operation so they can be written to files separately.
-				opts.Configuration.OutputOptions.IncludeOperationIDs = []string{opID}
-				err = opts.Validate()
-				if err != nil {
-					errExit("error unable to validate configuration: %s\n", err)
-				}
-				code, err := codegen.Generate(swagger, opts.Configuration)
-				if err != nil {
-					errExit("error generating code: %s", err)
-				}
-
-				opts.OutputFile = fmt.Sprintf("%s.%s", strings.ToLower(opID), filename)
-				err = os.WriteFile(opts.OutputFile, []byte(code), 0o644)
-				if err != nil {
-					errExit("error writing generated code to file: %s\n", err)
-				}
-			} else {
-				fmt.Printf("skipping %s because it's defined in exclude-operation-ids\n", opID)
-			}
-		}
-		return
 	}
 	code, err := codegen.Generate(swagger, opts.Configuration)
 	if err != nil {
@@ -606,4 +583,56 @@ func newConfigFromOldConfig(c oldConfiguration) (configuration, error) {
 		Configuration: opts,
 		OutputFile:    cfg.OutputFile,
 	}, nil
+}
+
+func handleSeparateFiles(swagger *openapi3.T, overlayOpts util.LoadSwaggerWithOverlayOpts, opts configuration) error {
+	if opts.OutputFile == "" {
+		return fmt.Errorf("file-per-operationID requires an output file to be set")
+	}
+	filename := opts.OutputFile
+	ops, err := codegen.GetOperationNames(swagger)
+	if err != nil {
+		return fmt.Errorf("error getting operation definitions: %w", err)
+	}
+	for opID, _ := range ops {
+		if opts.OutputDir {
+			opts.PackageName = "main"
+		}
+		swagger, err = util.LoadSwaggerWithOverlay(flag.Arg(0), overlayOpts)
+		if err != nil {
+			return fmt.Errorf("error loading swagger spec in %s\n: %s", flag.Arg(0), err)
+		}
+
+		if !codegen.StringInArray(opID, opts.Configuration.OutputOptions.ExcludeOperationIDs) {
+			// set the IncludeOperationIds for each operation so they can be written to files separately.
+			opts.Configuration.OutputOptions.IncludeOperationIDs = []string{opID}
+			err = opts.Validate()
+			if err != nil {
+				return fmt.Errorf("error unable to validate configuration: %s", err)
+			}
+			code, err := codegen.Generate(swagger, opts.Configuration)
+			if err != nil {
+				return fmt.Errorf("error generating code: %s", err)
+			}
+
+			if opts.OutputDir {
+				opName := strings.ToLower(opID)
+				err := os.Mkdir(opName, 0755)
+				if err != nil && !errors.Is(err, fs.ErrExist) {
+					return fmt.Errorf("unable to create directory: %w", err)
+				}
+				opts.OutputFile = fmt.Sprintf("%s/%s.gen.go", opName, opName)
+			} else {
+				opts.OutputFile = fmt.Sprintf("%s.%s", strings.ToLower(opID), filename)
+			}
+
+			err = os.WriteFile(opts.OutputFile, []byte(code), 0o644)
+			if err != nil {
+				return fmt.Errorf("error writing generated code to file: %s", err)
+			}
+		} else {
+			fmt.Printf("skipping %s because it's defined in exclude-operation-ids\n", opID)
+		}
+	}
+	return nil
 }

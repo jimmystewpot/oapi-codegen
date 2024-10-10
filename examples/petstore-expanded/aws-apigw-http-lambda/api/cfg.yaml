@@ -6,3 +6,4 @@ generate:
 output-options:
   file-per-operation-id: true
 output: petstore.gen.go
+output-dir: true

@@ -255,6 +255,10 @@
     "output": {
       "type": "string",
       "description": "The filename to output"
+    },
+    "output-dir": {
+      "type": "boolean",
+      "description": "If using file-per-operation-id this can be useful to separate the operationIds into separate directories or folders."
     }
   },
   "required": [
