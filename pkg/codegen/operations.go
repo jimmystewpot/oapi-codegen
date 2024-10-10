@@ -557,6 +557,7 @@ func OperationDefinitions(swagger *openapi3.T, initialismOverrides bool) ([]Oper
 
 		// Each path can have a number of operations, POST, GET, OPTIONS, etc.
 		pathOps := pathItem.Operations()
+
 		for _, opName := range SortedMapKeys(pathOps) {
 			op := pathOps[opName]
 			if pathItem.Servers != nil {
@@ -674,6 +675,23 @@ func generateDefaultOperationID(opName string, requestPath string, toCamelCaseFu
 	}
 
 	return nameNormalizer(operationId), nil
+}
+
+func GetOperationNames(swagger *openapi3.T) (map[string]string, error) {
+	ops := make(map[string]string, 0)
+	if swagger == nil || swagger.Paths == nil {
+		return ops, fmt.Errorf("swagger cannot be nil and paths can't be nil")
+	}
+
+	for _, requestPath := range SortedMapKeys(swagger.Paths.Map()) {
+		pathItem := swagger.Paths.Value(requestPath)
+		// Each path can have a number of operations, POST, GET, OPTIONS, etc.
+		pathOps := pathItem.Operations()
+		for _, op := range SortedMapKeys(pathOps) {
+			ops[pathOps[op].OperationID] = ""
+		}
+	}
+	return ops, nil
 }
 
 // GenerateBodyDefinitions turns the Swagger body definitions into a list of our body

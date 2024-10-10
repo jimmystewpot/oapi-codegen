@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=../../../../configuration-schema.json
+package: api
+generate:
+  aws-apigw-http-lambda: true
+  models: false
+output-options:
+  file-per-operation-id: true
+output: petstore.gen.go

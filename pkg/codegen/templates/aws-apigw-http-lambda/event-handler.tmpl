@@ -1,1 +1,10 @@
+{{ $sz := . | len }}
+{{range .}}{{.SummaryAsComment }}
+// ({{.Method}} {{.Path}})
+func Handle{{.OperationId}}Request(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 
+return events.APIGatewayProxyResponse{}, nil
+}
+
+
+{{end}}

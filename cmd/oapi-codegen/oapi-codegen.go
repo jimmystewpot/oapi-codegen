@@ -16,6 +16,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -90,6 +91,12 @@ type oldConfiguration struct {
 var noVCSVersionOverride string
 
 func main() {
+	defer func() {
+		if x := recover(); x != nil {
+			println(fmt.Sprintf("%T: %+v", x, x))
+			log.Printf("%s\n", debug.Stack())
+		}
+	}()
 	flag.StringVar(&flagOutputFile, "o", "", "Where to output generated code, stdout is default.")
 	flag.BoolVar(&flagOldConfigStyle, "old-config-style", false, "Whether to use the older style config file format.")
 	flag.BoolVar(&flagOutputConfig, "output-config", false, "When true, outputs a configuration file for oapi-codegen using current settings.")
@@ -137,9 +144,9 @@ func main() {
 	}
 
 	if flag.NArg() < 1 {
-		errExit("Please specify a path to a OpenAPI 3.0 spec file\n")
+		errExit("Please specify a path to a OpenAPI 3.0 spec file")
 	} else if flag.NArg() > 1 {
-		errExit("Only one OpenAPI 3.0 spec file is accepted and it must be the last CLI argument\n")
+		errExit("Only one OpenAPI 3.0 spec file is accepted and it must be the last CLI argument")
 	}
 
 	// We will try to infer whether the user has an old-style config, or a new
@@ -155,7 +162,7 @@ func main() {
 	if oldConfigStyle == nil && (flagConfigFile != "") {
 		configFile, err := os.ReadFile(flagConfigFile)
 		if err != nil {
-			errExit("error reading config file '%s': %v\n", flagConfigFile, err)
+			errExit("error reading config file '%s': %v", flagConfigFile, err)
 		}
 		var oldConfig oldConfiguration
 		oldErr := yaml.UnmarshalStrict(configFile, &oldConfig)
@@ -211,11 +218,11 @@ func main() {
 		if flagConfigFile != "" {
 			buf, err := os.ReadFile(flagConfigFile)
 			if err != nil {
-				errExit("error reading config file '%s': %v\n", flagConfigFile, err)
+				errExit("error reading config file '%s': %v", flagConfigFile, err)
 			}
 			err = yaml.Unmarshal(buf, &opts)
 			if err != nil {
-				errExit("error parsing'%s' as YAML: %v\n", flagConfigFile, err)
+				errExit("error parsing'%s' as YAML: %v", flagConfigFile, err)
 			}
 		} else {
 			// In the case where no config file is provided, we assume some
@@ -235,25 +242,25 @@ func main() {
 		}
 
 		if err := updateConfigFromFlags(&opts); err != nil {
-			errExit("error processing flags: %v\n", err)
+			errExit("error processing flags: %v", err)
 		}
 	} else {
 		var oldConfig oldConfiguration
 		if flagConfigFile != "" {
 			buf, err := os.ReadFile(flagConfigFile)
 			if err != nil {
-				errExit("error reading config file '%s': %v\n", flagConfigFile, err)
+				errExit("error reading config file '%s': %v", flagConfigFile, err)
 			}
 			err = yaml.Unmarshal(buf, &oldConfig)
 			if err != nil {
-				errExit("error parsing'%s' as YAML: %v\n", flagConfigFile, err)
+				errExit("error parsing'%s' as YAML: %v", flagConfigFile, err)
 			}
 		}
 		var err error
 		opts, err = newConfigFromOldConfig(oldConfig)
 		if err != nil {
 			flag.PrintDefaults()
-			errExit("error creating new config from old config: %v\n", err)
+			errExit("error creating new config from old config: %v", err)
 		}
 
 	}
@@ -304,6 +311,44 @@ func main() {
 		opts.Configuration.NoVCSVersionOverride = &noVCSVersionOverride
 	}
 
+	if opts.Configuration.OutputOptions.FilePerOperationID {
+		if opts.OutputFile == "" {
+			errExit("file-per-operationID requires an output file to be set")
+		}
+		filename := opts.OutputFile
+		ops, err := codegen.GetOperationNames(swagger)
+		if err != nil {
+			errExit("error getting operation definitions: %w\n", err)
+		}
+		for opID, _ := range ops {
+			swagger, err = util.LoadSwaggerWithOverlay(flag.Arg(0), overlayOpts)
+			if err != nil {
+				errExit("error loading swagger spec in %s\n: %s\n", flag.Arg(0), err)
+			}
+
+			if !codegen.StringInArray(opID, opts.Configuration.OutputOptions.ExcludeOperationIDs) {
+				// set the IncludeOperationIds for each operation so they can be written to files separately.
+				opts.Configuration.OutputOptions.IncludeOperationIDs = []string{opID}
+				err = opts.Validate()
+				if err != nil {
+					errExit("error unable to validate configuration: %s\n", err)
+				}
+				code, err := codegen.Generate(swagger, opts.Configuration)
+				if err != nil {
+					errExit("error generating code: %s", err)
+				}
+
+				opts.OutputFile = fmt.Sprintf("%s.%s", strings.ToLower(opID), filename)
+				err = os.WriteFile(opts.OutputFile, []byte(code), 0o644)
+				if err != nil {
+					errExit("error writing generated code to file: %s\n", err)
+				}
+			} else {
+				fmt.Printf("skipping %s because it's defined in exclude-operation-ids\n", opID)
+			}
+		}
+		return
+	}
 	code, err := codegen.Generate(swagger, opts.Configuration)
 	if err != nil {
 		errExit("error generating code: %s\n", err)

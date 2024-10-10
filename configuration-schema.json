@@ -59,7 +59,7 @@
         },
         "aws-apigw-http-lambda": {
           "type": "boolean",
-          "description": "aws-http-lambda specifies wheather to generate an AWS lambda function to  handle an api-gateway http event boilerplate"
+          "description": "aws-apigw-http-lambda specifies wheather to generate an AWS lambda function to  handle an api-gateway http event boilerplate"
         }
       }
     },
@@ -218,6 +218,11 @@
           "required": [
             "path"
           ]
+        },
+        "file-per-operation-id": {
+          "type": "boolean",
+          "description": "Instead of writing code to a single file, create separate files for each operation",
+          "default": false
         }
       }
     },

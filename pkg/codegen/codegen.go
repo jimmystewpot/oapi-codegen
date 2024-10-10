@@ -128,12 +128,6 @@ func Generate(spec *openapi3.T, opts Configuration) (string, error) {
 		responseTypeSuffix = opts.OutputOptions.ResponseTypeSuffix
 	}
 
-	if globalState.options.OutputOptions.ClientTypeName == "" {
-		globalState.options.OutputOptions.ClientTypeName = defaultClientTypeName
-	}
-
-	nameNormalizerFunction := NameNormalizerFunction(opts.OutputOptions.NameNormalizer)
-	nameNormalizer = NameNormalizers[nameNormalizerFunction]
 	if nameNormalizer == nil {
 		return "", fmt.Errorf(`the name-normalizer option %v could not be found among options %q`,
 			opts.OutputOptions.NameNormalizer, NameNormalizers.Options())
@@ -430,6 +424,8 @@ func Generate(spec *openapi3.T, opts Configuration) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error formatting Go code %s: %w", goCode, err)
 	}
+	t = nil
+
 	return string(outBytes), nil
 }
 
