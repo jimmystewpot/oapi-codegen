@@ -2,7 +2,7 @@
 package: api
 generate:
   aws-apigw-http-lambda: true
-  models: false
+  models: true
 output-options:
   file-per-operation-id: true
 output: petstore.gen.go

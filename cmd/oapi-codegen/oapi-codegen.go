@@ -591,18 +591,31 @@ func handleSeparateFiles(swagger *openapi3.T, overlayOpts util.LoadSwaggerWithOv
 	if opts.OutputFile == "" {
 		return fmt.Errorf("file-per-operationID requires an output file to be set")
 	}
-	filename := opts.OutputFile
+
 	ops, err := codegen.GetOperationNames(swagger)
 	if err != nil {
 		return fmt.Errorf("error getting operation definitions: %w", err)
 	}
-	for opID, _ := range ops {
-		if opts.OutputDir {
-			opts.PackageName = "main"
-		}
+	filename := opts.OutputFile
+
+	if opts.Generate.Models {
 		swagger, err = util.LoadSwaggerWithOverlay(flag.Arg(0), overlayOpts)
 		if err != nil {
 			return fmt.Errorf("error loading swagger spec in %s\n: %s", flag.Arg(0), err)
+		}
+		err = handleModelsWithFiles(swagger, opts)
+		if err != nil {
+			return err
+		}
+		opts.OutputFile = filename
+		opts.Generate.Models = false
+	}
+
+	for opID, _ := range ops {
+		if opts.OutputDir {
+			// When using a single file per operation and an output directory
+			// the package name should be main to be idiomatic go.
+			opts.PackageName = "main"
 		}
 
 		if !codegen.StringInArray(opID, opts.Configuration.OutputOptions.ExcludeOperationIDs) {
@@ -612,29 +625,74 @@ func handleSeparateFiles(swagger *openapi3.T, overlayOpts util.LoadSwaggerWithOv
 			if err != nil {
 				return fmt.Errorf("error unable to validate configuration: %s", err)
 			}
+
+			swagger, err = util.LoadSwaggerWithOverlay(flag.Arg(0), overlayOpts)
+			if err != nil {
+				return fmt.Errorf("error loading swagger spec in %s\n: %s", flag.Arg(0), err)
+			}
 			code, err := codegen.Generate(swagger, opts.Configuration)
 			if err != nil {
 				return fmt.Errorf("error generating code: %s", err)
 			}
 
-			if opts.OutputDir {
-				opName := strings.ToLower(opID)
-				err := os.Mkdir(opName, 0755)
-				if err != nil && !errors.Is(err, fs.ErrExist) {
-					return fmt.Errorf("unable to create directory: %w", err)
-				}
-				opts.OutputFile = fmt.Sprintf("%s/%s.gen.go", opName, opName)
-			} else {
-				opts.OutputFile = fmt.Sprintf("%s.%s", strings.ToLower(opID), filename)
+			err = handleFileDir(opID, &opts)
+			if err != nil {
+				return err
 			}
 
 			err = os.WriteFile(opts.OutputFile, []byte(code), 0o644)
 			if err != nil {
 				return fmt.Errorf("error writing generated code to file: %s", err)
 			}
+			opts.OutputFile = filename
 		} else {
 			fmt.Printf("skipping %s because it's defined in exclude-operation-ids\n", opID)
 		}
+	}
+	return nil
+}
+
+func handleFileDir(name string, opts *configuration) error {
+	dirName := strings.ToLower(name)
+	var filename string
+
+	if opts.OutputDir {
+		// for models we keep the output filename and write it to the directory models
+		if opts.Generate.Models {
+			filename = opts.OutputFile
+		} else {
+			filename = strings.ToLower("main.gen.go")
+		}
+		err := os.Mkdir(dirName, 0755)
+		if err != nil && !errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("unable to create directory: %w", err)
+		}
+		opts.OutputFile = fmt.Sprintf("%s/%s", dirName, filename)
+	} else {
+		opts.OutputFile = fmt.Sprintf("%s.%s", filename, opts.OutputFile)
+	}
+	return nil
+}
+
+func handleModelsWithFiles(swagger *openapi3.T, opts configuration) error {
+	// create a copy of the configuration to mutate.
+	mod := opts
+	mod.PackageName = "models"
+	mod.Generate = codegen.GenerateOptions{}
+	mod.Generate.Models = true
+
+	code, err := codegen.Generate(swagger, mod.Configuration)
+	if err != nil {
+		return fmt.Errorf("error generating code: %s", err)
+	}
+
+	err = handleFileDir("models", &mod)
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(opts.OutputFile, []byte(code), 0o644)
+	if err != nil {
+		return fmt.Errorf("error writing generated code to file: %s", err)
 	}
 	return nil
 }
